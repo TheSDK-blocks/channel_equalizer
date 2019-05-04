@@ -1,0 +1,1 @@
+../chisel/verilog/channel_equalizer.v

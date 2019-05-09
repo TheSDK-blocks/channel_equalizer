@@ -13,6 +13,8 @@ from verilog import *
 from verilog.testbench import *
 from verilog.testbench import testbench as vtb
 
+from signal_generator_802_11n import PLPCsyn_long
+
 
 class channel_equalizer(verilog,thesdk):
     @property
@@ -71,7 +73,7 @@ class channel_equalizer(verilog,thesdk):
               self.define_testbench()
               self.tb.export(force=True)
               self.write_infile()
-              #self.run_verilog()
+              self.run_verilog()
               #self.read_outfile()
               #del self.iofile_bundle
 
@@ -110,10 +112,13 @@ class channel_equalizer(verilog,thesdk):
         siglist=[
                'reset',
                'initdone',
+               'io_reference_addr',
+               'io_reference_write_en',
+               'io_estimate_addr',
+               'io_estimate_write_en',
                 ]
-        for i in range(self.Users):
-            siglist += ['io_reference_in_%s_real' %i] 
-            siglist += ['io_reference_in_%s_imag' %i]
+        siglist += ['io_reference_in_real'] 
+        siglist += ['io_reference_in_imag']
 
         for name in siglist:
             c.new(name=name, cls='reg')
@@ -125,6 +130,8 @@ class channel_equalizer(verilog,thesdk):
         #start defining the file
         f=self.control_in.Data.Members['control_file']
         f.set_control_data(init=0) #Initialize to zero at time 0
+        step=int(1/(self.Rs*1e-12))
+
         time=0
         for name in [ 'reset', ]:
             f.set_control_data(time=time,name=name,val=1)
@@ -134,6 +141,21 @@ class channel_equalizer(verilog,thesdk):
 
         for name in [ 'reset', ]:
             f.set_control_data(time=time,name=name,val=0)
+        time+=step
+
+        refseq=(np.array(PLPCsyn_long).reshape(-1,1)*(2**15-1)).astype(complex)
+        print( refseq )
+        f.set_control_data(time=time,name='io_reference_write_en',val=1)
+        sequence=range(64)
+        addr=0
+        for i in range(64):
+            time+=step
+            f.set_control_data(time=time,name='io_reference_addr',val=i)
+            f.set_control_data(time=time,name='io_reference_in_real',val=refseq[i].real)
+            f.set_control_data(time=time,name='io_reference_in_imag',val=refseq[i].imag)
+        time+=step
+        f.set_control_data(time=time,name='io_reference_addr',val=0)
+        f.set_control_data(time=time,name='io_reference_write_en',val=0)
 
         for name in [ 'initdone', ]:
             f.set_control_data(time=time,name=name,val=1)
@@ -143,7 +165,16 @@ class channel_equalizer(verilog,thesdk):
         #Initialize testbench
         self.tb=vtb(self)
 
-        # Dut is creted automaticaly, if verilog file for it exists
+        # Create TB connectors from the control file
+        for connector in self.control_in.Data.Members['control_file'].verilog_connectors:
+            self.tb.connectors.Members[connector.name]=connector
+            # Connect them to DUT
+            try: 
+                self.dut.ios.Members[connector.name].connect=connector
+            except:
+                pass
+
+        # Dut is created automaticaly, if verilog file for it exists
         self.tb.connectors.update(bundle=self.tb.dut_instance.io_signals.Members)
 
         #Assign verilog simulation parameters to testbench
@@ -160,14 +191,6 @@ class channel_equalizer(verilog,thesdk):
         #Define testbench verilog file
         self.tb.file=self.vlogtbsrc
 
-        # Create TB connectors from the control file
-        for connector in self.control_in.Data.Members['control_file'].verilog_connectors:
-            self.tb.connectors.Members[connector.name]=connector
-            # Connect them to DUT
-            try: 
-                self.dut.ios.Members[connector.name].connect=connector
-            except:
-                pass
 
         ## Start initializations
         #Init the signals connected to the dut input to zero
@@ -179,16 +202,22 @@ class channel_equalizer(verilog,thesdk):
         # Define what signals and in which order and format are read form the files
         # i.e. verilog_connectors of the file
         name='control_file'
-        ionames=[]
-        for i in range(self.Users):
-            ionames += ['io_reference_in_%s_real' %i]
-            ionames += ['io_reference_in_%s_imag' %i]
+        ionames=[
+               'reset',
+               'initdone',
+               'io_reference_addr',
+               'io_reference_write_en',
+               'io_estimate_addr',
+               'io_estimate_write_en',
+                ]
+        ionames += ['io_reference_in_real'] 
+        ionames += ['io_reference_in_imag']
 
         self.iofile_bundle.Members[name].verilog_connectors=\
                 self.tb.connectors.list(names=ionames)
         
-        for name in ionames:
-            self.tb.connectors.Members[name].type='signed'
+        #for name in ionames:
+        #    self.tb.connectors.Members[name].type='signed'
 
         name='A'
         ionames=[]
@@ -277,7 +306,7 @@ if __name__=="__main__":
     dut2=channel_equalizer()
     dut.model='py'
     dut2.model='sv'
-    #dut2.interactive_verilog=True
+    dut2.interactive_verilog=True
     len=16*64
     phres=64
     fsig=25e6

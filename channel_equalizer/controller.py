@@ -17,6 +17,7 @@ class controller(verilog,thesdk):
     def __init__(self,*arg): 
         self.proplist = [ 'Rs', 'symbol_length', 'Users' ];    #properties that can be propagated from parent
         self.Rs = 160e6;                   # Sampling frequency
+        self.step=int(1/(self.Rs*1e-12))   #Time increment for control
         self.Users = 16;                   # Number of users
         self.symbol_length  = 64;          # OFDM symbol length
         self.A = IO();            # Input data, FFT Bins in series 
@@ -119,7 +120,6 @@ class controller(verilog,thesdk):
     def reset(self):
         #start defining the file
         f=self.control_write.Data.Members['control_file']
-        step=int(1/(self.Rs*1e-12))
 
         time=0
         for name in [ 'reset', ]:
@@ -130,8 +130,11 @@ class controller(verilog,thesdk):
 
         for name in [ 'reset', ]:
             f.set_control_data(time=time,name=name,val=0)
-        time+=step
-
+        self.curr_time=time
+     
+    def write_reference_sequence(self):
+        f=self.control_write.Data.Members['control_file']
+        time=self.curr_time
         refseq=(np.array(PLPCsyn_long).reshape(-1,1)*(2**15-1)).astype(complex)
         refseq[0]=1 # This is to find sync
         refseq[-1]=2 # This is to find sync
@@ -140,21 +143,31 @@ class controller(verilog,thesdk):
         sequence=range(64)
         addr=0
         for i in range(64):
-            time+=step
+            time+=self.step
             f.set_control_data(time=time,name='io_reference_addr',val=i)
             f.set_control_data(time=time,name='io_reference_in_real',val=refseq[i].real)
             f.set_control_data(time=time,name='io_reference_in_imag',val=refseq[i].imag)
-        time+=step
+        time+=self.step
         f.set_control_data(time=time,name='io_reference_addr',val=0)
         f.set_control_data(time=time,name='io_reference_write_en',val=0)
         f.set_control_data(time=time,name='io_estimate_user_index',val=0)
-        time+=step
+        time+=self.step
+        self.curr_time=time
+
+    def start_datafeed(self):
+        f=self.control_write.Data.Members['control_file']
+        time=self.curr_time
         for name in [ 'initdone', ]:
             f.set_control_data(time=time,name=name,val=1)
-        time+=step
+        time+=self.step
+        self.curr_time=time
+
+    def estimate_sync(self):
+        f=self.control_write.Data.Members['control_file']
+        time=self.curr_time
         f.set_control_data(time=time,name='io_estimate_sync',val=1)
-        time+=step
-        time+=step
+        time+=self.step
+        time+=self.step
         f.set_control_data(time=time,name='io_estimate_sync',val=0)
         self.curr_time=time
 

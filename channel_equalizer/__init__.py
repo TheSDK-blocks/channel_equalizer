@@ -233,6 +233,9 @@ if __name__=="__main__":
     from  channel_equalizer.controller import controller as channel_equalizer_controller
     controller=channel_equalizer_controller()
     controller.reset()
+    controller.write_reference_sequence()
+    controller.start_datafeed()
+    controller.estimate_sync()
     dut=channel_equalizer()
     dut2=channel_equalizer()
     dut.model='py'

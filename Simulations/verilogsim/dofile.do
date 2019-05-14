@@ -22,13 +22,24 @@ sim:/tb_channel_equalizer/channel_equalizer/complex_reciprocal/io_N_real \
 sim:/tb_channel_equalizer/channel_equalizer/complex_reciprocal/io_N_imag \
 sim:/tb_channel_equalizer/channel_equalizer/complex_reciprocal/io_D_real \
 sim:/tb_channel_equalizer/channel_equalizer/complex_reciprocal/io_D_imag \
+sim:/tb_channel_equalizer/channel_equalizer/edge_detector_5/io_rising \
+sim:/tb_channel_equalizer/channel_equalizer/complex_reciprocal/io_Q_real \
+sim:/tb_channel_equalizer/channel_equalizer/complex_reciprocal/io_Q_imag \
+sim:/tb_channel_equalizer/channel_equalizer/r_estimate_done \
+sim:/tb_channel_equalizer/channel_equalizer/r_estimate_format \
+sim:/tb_channel_equalizer/channel_equalizer/r_estimate_done_flag \
+sim:/tb_channel_equalizer/channel_equalizer/io_estimate_write_en \
+sim:/tb_channel_equalizer/channel_equalizer/io_estimate_addr \
+sim:/tb_channel_equalizer/io_A_real \
+sim:/tb_channel_equalizer/io_A_imag \
+sim:/tb_channel_equalizer/io_estimate_sync \
+sim:/tb_channel_equalizer/io_equalize_sync \
 sim:/tb_channel_equalizer/channel_equalizer/r_A_real \
 sim:/tb_channel_equalizer/channel_equalizer/r_A_imag \
 sim:/tb_channel_equalizer/channel_equalizer/r_estimate_sync \
 sim:/tb_channel_equalizer/channel_equalizer/r_equalize_sync \
-sim:/tb_channel_equalizer/channel_equalizer/edge_detector_5/io_rising \
-sim:/tb_channel_equalizer/channel_equalizer/complex_reciprocal/io_Q_real \
-sim:/tb_channel_equalizer/channel_equalizer/complex_reciprocal/io_Q_imag \
+sim:/tb_channel_equalizer/io_Z_0_real \
+sim:/tb_channel_equalizer/io_Z_0_imag \
 
 run -all
 

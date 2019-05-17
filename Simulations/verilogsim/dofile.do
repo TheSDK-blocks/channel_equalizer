@@ -40,6 +40,10 @@ sim:/tb_channel_equalizer/channel_equalizer/r_estimate_sync \
 sim:/tb_channel_equalizer/channel_equalizer/r_equalize_sync \
 sim:/tb_channel_equalizer/io_Z_0_real \
 sim:/tb_channel_equalizer/io_Z_0_imag \
+sim:/tb_channel_equalizer/io_estimate_read_en \
+sim:/tb_channel_equalizer/io_estimate_addr \
+sim:/tb_channel_equalizer/io_estimate_out_0_real \
+sim:/tb_channel_equalizer/io_estimate_out_0_imag \
 
 run -all
 

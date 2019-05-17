@@ -30,8 +30,7 @@ class channel_equalizer(verilog,thesdk):
         self._Z = IO();           # Output, equalized FFT bins
         self.control_write = IO()
         self.control_write.Data = Bundle()
-        self.control_out = IO()
-        self.control_out.Data = Bundle()
+        self._control_read = IO()
         self.model='py';             #can be set externally, but is not propagated
         self.par= False              #By default, no parallel processing
         self.queue= []               #By default, no parallel processing
@@ -46,6 +45,7 @@ class channel_equalizer(verilog,thesdk):
         self.iofile_bundle=Bundle()
         #Adds files to bundle
         _=verilog_iofile(self,name='Z',datatype='complex')
+        _=verilog_iofile(self,name='control_read',datatype='complex')
         _=verilog_iofile(self,name='A',dir='in')
         _=verilog_iofile(self,name='estimate_sync',dir='in')
         _=verilog_iofile(self,name='equalize_sync',dir='in')
@@ -65,14 +65,14 @@ class channel_equalizer(verilog,thesdk):
             self.main()
         else: 
           if self.model=='sv':
-              self.control_write.Data.Members['control_file'].adopt(parent=self)
+              self.control_write.Data.Members['control_write'].adopt(parent=self)
 
               # Create testbench and execute the simulation
               self.define_testbench()
               self.tb.export(force=True)
               self.write_infile()
               self.run_verilog()
-              #self.read_outfile()
+              self.read_outfile()
               #del self.iofile_bundle
 
           elif self.model=='vhdl':
@@ -91,12 +91,14 @@ class channel_equalizer(verilog,thesdk):
 
     def read_outfile(self):
         #Handle the ofiles here as you see the best
-        a=self.iofile_bundle.Members['Z']
-        a.read(dtype='object')
-        self._Z.Data=a.data
-        print(self._Z.Data)
+        self.iofile_bundle.Members['Z'].read()
+        self.iofile_bundle.Members['control_read'].read()
+        self._Z.Data=self.iofile_bundle.Members['Z'].data
+        self._control_read.Data=self.iofile_bundle.Members['control_read'].data
+
         if self.par:
             self.queue.put(self._Z)
+            self.queue.put(self._control_read)
 
 
 
@@ -104,9 +106,8 @@ class channel_equalizer(verilog,thesdk):
     def define_testbench(self):
         #Initialize testbench
         self.tb=vtb(self)
-
         # Create TB connectors from the control file
-        for connector in self.control_write.Data.Members['control_file'].verilog_connectors:
+        for connector in self.control_write.Data.Members['control_write'].verilog_connectors:
             self.tb.connectors.Members[connector.name]=connector
             # Connect them to DUT
             try: 
@@ -141,8 +142,8 @@ class channel_equalizer(verilog,thesdk):
         # IO file connector definitions
         # Define what signals and in which order and format are read form the files
         # i.e. verilog_connectors of the file
-        name='control_file'
-
+        # All connectors should be already defined at this phase
+        name='control_write'
         ionames=[ _.name for _ in self.control_write.Data.Members[name].verilog_connectors ]
         self.iofile_bundle.Members[name].verilog_connectors=\
                 self.tb.connectors.list(names=ionames)
@@ -173,13 +174,28 @@ class channel_equalizer(verilog,thesdk):
 
         name='Z'
         ionames=[]
-        for user in range(1):
+        for user in range(self.Users):
            ionames+= [ 'io_Z_%s_real' %(user) , 
                      'io_Z_%s_imag' %(user)] 
         self.iofile_bundle.Members[name].verilog_connectors=\
                 self.tb.connectors.list(names=ionames)
 
         self.iofile_bundle.Members[name].verilog_io_condition_append(cond='&& initdone')
+        for name in ionames:
+            self.tb.connectors.Members[name].type='signed'
+
+        name='control_read'
+        ionames=[]
+        for user in range(1):
+           ionames+= [ 'io_estimate_out_%s_real' %(user) , 
+                     'io_estimate_out_%s_imag' %(user)] 
+        self.iofile_bundle.Members[name].verilog_connectors=\
+                self.tb.connectors.list(names=ionames)
+
+        self.iofile_bundle.Members[name].verilog_io_condition_append(cond='&& initdone')
+        # Should be ok, we just need somthing that trigs the writing to file
+        # and is proportional to scan
+        self.iofile_bundle.Members[name].verilog_io_sync='@(negedge io_estimate_read_en)\n'
         for name in ionames:
             self.tb.connectors.Members[name].type='signed'
 
@@ -203,8 +219,6 @@ if __name__=="__main__":
     #indata=np.ones((1,2**13)).astype(complex).reshape(-1,1)*(1+1j)
     tdata=np.round((np.ones((int(2**13/64),1),dtype=complex)*PLPCsyn_long.T).reshape(-1,1)*1024)
     channel=(np.ones((int(2**13/64),1))*(np.random.normal(0,1,chlen)+1j*np.random.normal(0,1,chlen)).reshape(1,-1)).reshape(-1,1)
-    print(tdata.shape)
-    print(channel.shape)
     #indata[0,0]=1+1j*1 # To help syncing
     indata=np.round((tdata[:,0] * channel[:,0])).reshape(-1,1)
     indata[0:64:,0]=1+1j #Sync help
@@ -213,6 +227,8 @@ if __name__=="__main__":
 
     controller=channel_equalizer_controller()
     controller.reset()
+    controller.reset_estimate_memories()
+    controller.step_time(step=10*controller.step)
     controller.write_reference_sequence()
     controller.set_estimate_format(value=1)
     controller.step_time()
@@ -225,6 +241,8 @@ if __name__=="__main__":
     estimate_sync[128,0]=1
     controller.step_time(step=100*controller.step)
     controller.set_estimate_zeros()
+    controller.step_time(step=2**10*controller.step)
+    controller.read_estimate_out()
     dut=channel_equalizer()
     dut2=channel_equalizer()
     dut.model='py'
@@ -238,9 +256,26 @@ if __name__=="__main__":
     dut2.estimate_sync.Data=estimate_sync
     dut2.equalize_sync.Data=equalize_sync
     dut2.control_write=controller.control_write
-
-    dut.run()
+    #dut.run()
     dut2.run()
+    estimated_data=dut2._control_read.Data[:,0].reshape(-1,1)*np.ones((1,16))
+    #restart simulation
+    estimate_sync[0,0]=0
+    estimate_sync[128,0]=0
+    controller.reset_control_sequence()
+    controller.reset()
+    controller.write_estimate_sequence(data=estimated_data)
+    controller.step_time(step=10*controller.step)
+    controller.write_reference_sequence()
+    controller.set_estimate_format(value=0)
+    controller.step_time()
+    controller.start_datafeed()
+    controller.step_time(step=2**10*controller.step)
+    controller.read_estimate_out()
+    dut2.run()
+    print(dut2._control_read.Data)
+    print(dut2._Z.Data)
+
     #f0=plt.figure(0)
     #plt.plot(np.abs(dut._io_out.Data[10,:]))
     #plt.suptitle("Python model")

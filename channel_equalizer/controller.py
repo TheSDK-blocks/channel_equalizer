@@ -157,9 +157,10 @@ class controller(verilog,thesdk):
 
     # [TODO]: If signal does not exist, add it to column
     # Enables file initialization without allocation 
-    def write_reference_sequence(self):
+    def write_reference_sequence(self,**kwargs):
         f=self.control_write.Data.Members['control_write']
-        refseq=(np.array(PLPCsyn_long).reshape(-1,1)*(2**15-1)).astype(complex)
+        maxval=kwargs.get('maxval',2**15-1) 
+        refseq=(np.array(PLPCsyn_long).reshape(-1,1)*(maxval)).astype(complex)
         #refseq[0]=1 # This is to find sync
         #refseq[-1]=2 # This is to find sync
         #print( refseq )

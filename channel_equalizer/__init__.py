@@ -224,6 +224,9 @@ if __name__=="__main__":
     len=16*chlen
     phres=64
     fsig=25e6
+    refmaxval=30000
+    #mode=0  ## Invert channel on chip
+    mode=1  ## Invert channel externally
     #indata=2**10*np.exp(1j*2*np.pi/phres*(np.arange(len)*np.round(fsig/dut.Rs*phres)))\
     #        .reshape(-1,1)
     #indata=np.arange(1,2**13).astype(complex).reshape(-1,1)*(1+1j)
@@ -231,11 +234,10 @@ if __name__=="__main__":
     onerows=np.ones((int(2**13/chlen),1),dtype=complex)
     tdata=np.round((onerows*PLPCsyn_long.T)*1024)
     print(tdata.shape)
-    #channel=np.random.normal(0,1,(int(2**13/chlen),chlen))+1j*np.random.normal(0,1,(int(2**13/chlen),chlen))
     #channel=onerows*np.ones((1,chlen))+1j*np.ones((1,chlen))
     channel=onerows*((np.arange(chlen)/chlen+1j*np.arange(chlen)/chlen).reshape(1,-1))
     #Should cap the max value to 1
-    #channel=onerows*((np.random.normal(0,0.1,chlen)+1j*np.random.normal(0,0.1,chlen)).reshape(1,-1))
+    #channel=onerows*((np.random.normal(0,0.01,chlen)+1j*np.random.normal(0,0.1,chlen)).reshape(1,-1))
 
     print(channel.shape)
     #indata[0,0]=1+1j*1 # To help syncing
@@ -248,8 +250,8 @@ if __name__=="__main__":
     controller.reset()
     controller.reset_estimate_memories()
     controller.step_time(step=10*controller.step)
-    controller.write_reference_sequence()
-    controller.set_estimate_format(value=1)
+    controller.write_reference_sequence(maxval=refmaxval)
+    controller.set_estimate_format(value=mode)
     controller.step_time()
 
     equalize_sync[0::128]=1
@@ -284,7 +286,7 @@ if __name__=="__main__":
     estimated_data=dut2._control_read.Data
     zf_matrix=np.array([],dtype='complex')
     for bin in range(64):
-        c=np.conj(dut2._control_read.Data[bin,:]/2**16).reshape(-1,1) ##Channel estimate
+        c=(dut2._control_read.Data[bin,:]/2**16).reshape(-1,1) ##Channel estimate
         bf=((1/c).T*(2**16-1)).real.astype(int)+1j*((1/c).T*(2**16-1)).imag.astype(int)
         bftest=c*bf
         print(bftest)
@@ -303,10 +305,12 @@ if __name__=="__main__":
     estimate_sync=np.zeros((indata.shape[0],1))
     controller.reset_control_sequence()
     controller.reset()
-    controller.set_estimate_format(value=0)
-    controller.write_reference_sequence()
-    controller.write_estimate_sequence(data=bf_matrix)
-    #controller.write_estimate_sequence(data=estimated_data)
+    controller.set_estimate_format(value=mode)
+    controller.write_reference_sequence(maxval=refmaxval)
+    if mode==0:
+        controller.write_estimate_sequence(data=estimated_data)
+    elif mode==1:
+        controller.write_estimate_sequence(data=bf_matrix)
     controller.step_time()
     controller.start_datafeed()
     controller.step_time(step=2**10*controller.step)

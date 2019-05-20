@@ -27,6 +27,7 @@ class channel_equalizer(verilog,thesdk):
         self.A = IO();            # Input data, FFT Bins in series 
         self.estimate_sync = IO();            
         self.equalize_sync = IO();            
+        self.estimate_user_index= IO();            
         self._Z = IO();           # Output, equalized FFT bins
         self.control_write = IO()
         self.control_write.Data = Bundle()
@@ -42,13 +43,14 @@ class channel_equalizer(verilog,thesdk):
         self.init()
     def init(self):
         #This gets updated every time you add an iofile
-        self.iofile_bundle=Bundle()
+        #self.iofile_bundle=Bundle()
         #Adds files to bundle
         _=verilog_iofile(self,name='Z',datatype='complex')
         _=verilog_iofile(self,name='control_read',datatype='complex')
         _=verilog_iofile(self,name='A',dir='in')
         _=verilog_iofile(self,name='estimate_sync',dir='in')
         _=verilog_iofile(self,name='equalize_sync',dir='in')
+        _=verilog_iofile(self,name='estimate_user_index',dir='in')
         self.vlogparameters=dict([ ('g_Rs',self.Rs),])
 
     def main(self):
@@ -73,7 +75,7 @@ class channel_equalizer(verilog,thesdk):
               self.write_infile()
               self.run_verilog()
               self.read_outfile()
-              #del self.iofile_bundle
+              del self.iofile_bundle
 
           elif self.model=='vhdl':
               self.print_log(type='F', msg='VHDL model not yet supported')
@@ -82,6 +84,7 @@ class channel_equalizer(verilog,thesdk):
         #Input file data definitions
         self.iofile_bundle.Members['A'].data=self.A.Data
         self.iofile_bundle.Members['estimate_sync'].data=self.estimate_sync.Data
+        self.iofile_bundle.Members['estimate_user_index'].data=self.estimate_user_index.Data
         self.iofile_bundle.Members['equalize_sync'].data=self.equalize_sync.Data
 
         # This could be a method somewhere
@@ -158,6 +161,13 @@ class channel_equalizer(verilog,thesdk):
                 self.tb.connectors.list(names=ionames)
         self.iofile_bundle.Members[name].verilog_io_condition='initdone'
 
+        name='estimate_user_index'
+        ionames=[]
+        ionames+=['io_estimate_user_index']
+        self.iofile_bundle.Members[name].verilog_connectors=\
+                self.tb.connectors.list(names=ionames)
+        self.iofile_bundle.Members[name].verilog_io_condition='initdone'
+
         name='equalize_sync'
         ionames=[]
         ionames+=['io_equalize_sync']
@@ -186,7 +196,7 @@ class channel_equalizer(verilog,thesdk):
 
         name='control_read'
         ionames=[]
-        for user in range(1):
+        for user in range(self.Users):
            ionames+= [ 'io_estimate_out_%s_real' %(user) , 
                      'io_estimate_out_%s_imag' %(user)] 
         self.iofile_bundle.Members[name].verilog_connectors=\
@@ -209,6 +219,7 @@ if __name__=="__main__":
     from  channel_equalizer import *
     from  channel_equalizer.controller import controller as channel_equalizer_controller
     from signal_generator_802_11n import PLPCsyn_long
+    
     chlen=64
     len=16*chlen
     phres=64
@@ -217,11 +228,19 @@ if __name__=="__main__":
     #        .reshape(-1,1)
     #indata=np.arange(1,2**13).astype(complex).reshape(-1,1)*(1+1j)
     #indata=np.ones((1,2**13)).astype(complex).reshape(-1,1)*(1+1j)
-    tdata=np.round((np.ones((int(2**13/64),1),dtype=complex)*PLPCsyn_long.T).reshape(-1,1)*1024)
-    channel=(np.ones((int(2**13/64),1))*(np.random.normal(0,1,chlen)+1j*np.random.normal(0,1,chlen)).reshape(1,-1)).reshape(-1,1)
+    onerows=np.ones((int(2**13/chlen),1),dtype=complex)
+    tdata=np.round((onerows*PLPCsyn_long.T)*1024)
+    print(tdata.shape)
+    #channel=np.random.normal(0,1,(int(2**13/chlen),chlen))+1j*np.random.normal(0,1,(int(2**13/chlen),chlen))
+    #channel=onerows*np.ones((1,chlen))+1j*np.ones((1,chlen))
+    channel=onerows*((np.arange(chlen)/chlen+1j*np.arange(chlen)/chlen).reshape(1,-1))
+    #Should cap the max value to 1
+    #channel=onerows*((np.random.normal(0,0.1,chlen)+1j*np.random.normal(0,0.1,chlen)).reshape(1,-1))
+
+    print(channel.shape)
     #indata[0,0]=1+1j*1 # To help syncing
-    indata=np.round((tdata[:,0] * channel[:,0])).reshape(-1,1)
-    indata[0:64:,0]=1+1j #Sync help
+    indata=np.round(tdata * channel).reshape(-1,1)
+    #indata[0:64:,0]=1+1j #Sync help
     equalize_sync=np.zeros((indata.shape[0],1))
     estimate_sync=np.zeros((indata.shape[0],1))
 
@@ -233,46 +252,69 @@ if __name__=="__main__":
     controller.set_estimate_format(value=1)
     controller.step_time()
 
-    estimate_sync[0,0]=1
     equalize_sync[0::128]=1
     controller.start_datafeed()
     controller.step_time(step=125*controller.step)
-    controller.set_estimate_format(value=0)
-    estimate_sync[128,0]=1
-    controller.step_time(step=100*controller.step)
+    estimate_sync[0:16*128:128,0]=1
+    estimate_user_index=(np.cumsum(estimate_sync)-1).reshape(-1,1)
+    controller.step_time(step=16*128*controller.step)
     controller.set_estimate_zeros()
-    controller.step_time(step=2**10*controller.step)
     controller.read_estimate_out()
+
     dut=channel_equalizer()
     dut2=channel_equalizer()
     dut.model='py'
     dut2.model='sv'
-    dut2.interactive_verilog=True
-    dut.A.Data=indata
-    dut.estimate_sync.Data=estimate_sync
-    dut.equalize_sync.Data=equalize_sync
-    dut.control_write=controller.control_write
-    dut2.A.Data=indata
-    dut2.estimate_sync.Data=estimate_sync
-    dut2.equalize_sync.Data=equalize_sync
-    dut2.control_write=controller.control_write
-    #dut.run()
-    dut2.run()
-    estimated_data=dut2._control_read.Data[:,0].reshape(-1,1)*np.ones((1,16))
+    for d in [ dut, dut2 ]: 
+        d.interactive_verilog=False
+        d.A.Data=indata
+        d.estimate_sync.Data=estimate_sync
+        d.estimate_user_index.Data=estimate_user_index
+        d.equalize_sync.Data=equalize_sync
+        d.control_write=controller.control_write
+        d.A.Data=indata
+        d.estimate_sync.Data=estimate_sync
+        d.estimate_user_index.Data=estimate_user_index
+        d.equalize_sync.Data=equalize_sync
+        d.control_write=controller.control_write
+        d.run()
+    #Compute the estimates
+    addresses=[0,1,2,3,4,5,32,59,60,61,62,63]
+    #estimated_data=dut2._control_read.Data[0:64,0].reshape(-1,1)*np.ones((1,16))
+    estimated_data=dut2._control_read.Data
+    zf_matrix=np.array([],dtype='complex')
+    for bin in range(64):
+        c=np.conj(dut2._control_read.Data[bin,:]/2**16).reshape(-1,1) ##Channel estimate
+        bf=((1/c).T*(2**16-1)).real.astype(int)+1j*((1/c).T*(2**16-1)).imag.astype(int)
+        bftest=c*bf
+        print(bftest)
+        zf=(np.linalg.pinv(np.conj(c)*c.T)*np.conj(c)).T*2**16
+        if bin==0:
+            bf_matrix=bf.reshape(1,-1)
+            zf_matrix=((zf.real).astype(int)+1j+zf.imag.astype(int)).reshape(1,-1)
+        else:
+            bf_matrix=np.r_['0', bf_matrix, bf.reshape(1,-1) ]
+            zf_matrix=np.r_['0', zf_matrix, zf.reshape(1,-1) ]
+    
+    bf_matrix[addresses,:]=0+1j*0
+    zf_matrix[addresses,:]=0+1j*0
+
     #restart simulation
-    estimate_sync[0,0]=0
-    estimate_sync[128,0]=0
+    estimate_sync=np.zeros((indata.shape[0],1))
     controller.reset_control_sequence()
     controller.reset()
-    controller.write_estimate_sequence(data=estimated_data)
-    controller.step_time(step=10*controller.step)
-    controller.write_reference_sequence()
     controller.set_estimate_format(value=0)
+    controller.write_reference_sequence()
+    controller.write_estimate_sequence(data=bf_matrix)
+    #controller.write_estimate_sequence(data=estimated_data)
     controller.step_time()
     controller.start_datafeed()
     controller.step_time(step=2**10*controller.step)
     controller.read_estimate_out()
-    dut2.run()
+    for d in [ dut, dut2 ]: 
+        d.interactive_verilog=True
+        d.estimate_sync.Data=estimate_sync
+        d.run()
     print(dut2._control_read.Data)
     print(dut2._Z.Data)
 

@@ -27,6 +27,7 @@ class controller(verilog,thesdk):
         self.control_write.Data = Bundle()
         self.control_read = IO()
         self.control_read.Data = Bundle()
+        self.reference_sequence=np.array(PLPCsyn_long).reshape(-1,1).astype(complex)
         self.model='py';             #can be set externally, but is not propagated
         self.par= False              #By default, no parallel processing
         self.queue= []               #By default, no parallel processing
@@ -160,16 +161,15 @@ class controller(verilog,thesdk):
     def write_reference_sequence(self,**kwargs):
         f=self.control_write.Data.Members['control_write']
         maxval=kwargs.get('maxval',2**15-1) 
-        refseq=(np.array(PLPCsyn_long).reshape(-1,1)*(maxval)).astype(complex)
-        #refseq[0]=1 # This is to find sync
-        #refseq[-1]=2 # This is to find sync
-        #print( refseq )
+        self.reference_sequence=(np.array(PLPCsyn_long).reshape(-1,1)*(maxval)).astype(complex).reshape(-1,1)
         f.set_control_data(time=self.time,name='io_reference_write_en',val=1)
         for i in range(self.symbol_length):
             self.step_time()
             f.set_control_data(time=self.time,name='io_reference_addr',val=i)
-            f.set_control_data(time=self.time,name='io_reference_in_real',val=refseq[i].real)
-            f.set_control_data(time=self.time,name='io_reference_in_imag',val=refseq[i].imag)
+            f.set_control_data(time=self.time,name='io_reference_in_real',val=self
+                    .reference_sequence[i].real)
+            f.set_control_data(time=self.time,name='io_reference_in_imag',val=self
+                    .reference_sequence[i].imag)
             self.step_time()
         f.set_control_data(time=self.time,name='io_reference_addr',val=0)
         f.set_control_data(time=self.time,name='io_reference_write_en',val=0)

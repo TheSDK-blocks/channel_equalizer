@@ -219,6 +219,7 @@ if __name__=="__main__":
     from  channel_equalizer import *
     from  channel_equalizer.controller import controller as channel_equalizer_controller
     from signal_generator_802_11n import PLPCsyn_long
+    import pdb
     
     chlen=64
     len=16*chlen
@@ -233,13 +234,11 @@ if __name__=="__main__":
     #indata=np.ones((1,2**13)).astype(complex).reshape(-1,1)*(1+1j)
     onerows=np.ones((int(2**13/chlen),1),dtype=complex)
     tdata=np.round((onerows*PLPCsyn_long.T)*1024)
-    print(tdata.shape)
     #channel=onerows*np.ones((1,chlen))+1j*np.ones((1,chlen))
     channel=onerows*((np.arange(chlen)/chlen+1j*np.arange(chlen)/chlen).reshape(1,-1))
     #Should cap the max value to 1
     #channel=onerows*((np.random.normal(0,0.01,chlen)+1j*np.random.normal(0,0.1,chlen)).reshape(1,-1))
 
-    print(channel.shape)
     #indata[0,0]=1+1j*1 # To help syncing
     indata=np.round(tdata * channel).reshape(-1,1)
     #indata[0:64:,0]=1+1j #Sync help
@@ -289,7 +288,6 @@ if __name__=="__main__":
         c=(dut2._control_read.Data[bin,:]/2**16).reshape(-1,1) ##Channel estimate
         bf=((1/c).T*(2**16-1)).real.astype(int)+1j*((1/c).T*(2**16-1)).imag.astype(int)
         bftest=c*bf
-        print(bftest)
         zf=(np.linalg.pinv(np.conj(c)*c.T)*np.conj(c)).T*2**16
         if bin==0:
             bf_matrix=bf.reshape(1,-1)
@@ -316,25 +314,42 @@ if __name__=="__main__":
     controller.step_time(step=2**10*controller.step)
     controller.read_estimate_out()
     for d in [ dut, dut2 ]: 
-        d.interactive_verilog=True
+        d.interactive_verilog=False
         d.estimate_sync.Data=estimate_sync
         d.run()
-    print(dut2._control_read.Data)
-    print(dut2._Z.Data)
 
-    #f0=plt.figure(0)
-    #plt.plot(np.abs(dut._io_out.Data[10,:]))
-    #plt.suptitle("Python model")
-    #plt.xlabel("Freq")
-    #plt.ylabel("Abs(FFT)")
-    #plt.show(block=False)
-    #f0.savefig('fft_python.eps', format='eps', dpi=300);
-    #f1=plt.figure(1)
-    #plt.plot(np.abs(dut2._io_out.Data[10,:]))
-    #plt.suptitle("Verilog model")
-    #plt.xlabel("Freq")
-    #plt.ylabel("Abs(FFT)")
-    #plt.show(block=False)
-    #f1.savefig('fft_verilog.eps', format='eps', dpi=300);
-    #input()
+    f0=plt.figure(0)
+    x_ref=np.arange(64).reshape(-1,1) 
+    seq_ref=controller.reference_sequence.reshape(-1,1)
+    startindex=5750  #This is a random number within the valid output range
+    offset=np.argmax(np.abs(np.correlate(
+        dut2._Z.Data[startindex:startindex+127,0].reshape(-1),
+        controller.reference_sequence.reshape(-1))))
+    #print(offset) 
+    ##pdb.set_trace()
+    seq_equalized=dut2._Z.Data[startindex+offset:startindex+offset+64,0].reshape(-1,1)
+    plt.plot(x_ref,seq_ref.real,x_ref,seq_equalized.real)
+    plt.xlim(0,63)
+    plt.suptitle("Verilog model")
+    plt.xlabel("Bin")
+    plt.ylabel("Symbol")
+    plt.grid()
+    plt.show(block=False)
+    f0.savefig('sequences_verilog.eps', format='eps', dpi=300);
+
+    print(seq_equalized.shape)
+    print(seq_ref.shape)
+    err=(seq_ref-seq_equalized)
+    print(err.shape)
+
+    f1=plt.figure(1)
+    plt.plot(x_ref,err)
+    plt.xlim(0,63)
+    plt.suptitle("Verilog model")
+    plt.xlabel("Bin")
+    plt.ylabel("Symbol error")
+    plt.grid()
+    plt.show(block=False)
+    f1.savefig('sequences_diff.eps', format='eps', dpi=300);
+    input()
 

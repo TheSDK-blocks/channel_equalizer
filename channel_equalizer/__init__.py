@@ -273,11 +273,6 @@ if __name__=="__main__":
         d.estimate_user_index.Data=estimate_user_index
         d.equalize_sync.Data=equalize_sync
         d.control_write=controller.control_write
-        d.A.Data=indata
-        d.estimate_sync.Data=estimate_sync
-        d.estimate_user_index.Data=estimate_user_index
-        d.equalize_sync.Data=equalize_sync
-        d.control_write=controller.control_write
         d.run()
     #Compute the estimates
     addresses=[0,1,2,3,4,5,32,59,60,61,62,63]
